@@ -1,0 +1,104 @@
+//@version=5
+//
+// @author LazyBear 
+// List of all my indicators: https://www.tradingview.com/v/4IneGo8h/
+indicator(shorttitle='Momentum v5', title='Squeeze Momentum Indicator [LazyBear]', overlay=true)
+
+length = input(20, title='BB Length')
+mult = input(2.0, title='BB MultFactor')
+lengthKC = input(20, title='KC Length')
+multKC = input(1.5, title='KC MultFactor')
+
+useTrueRange = input(true, title='Use TrueRange (KC)')
+
+// Calculate BB
+source = close
+basis = ta.sma(source, length)
+dev = multKC * ta.stdev(source, length)
+upperBB = basis + dev
+lowerBB = basis - dev
+
+// Calculate KC
+ma = ta.sma(source, lengthKC)
+range_1 = useTrueRange ? ta.tr : high - low
+rangema = ta.sma(range_1, lengthKC)
+upperKC = ma + rangema * multKC
+lowerKC = ma - rangema * multKC
+
+sqzOn = lowerBB > lowerKC and upperBB < upperKC
+sqzOff = lowerBB < lowerKC and upperBB > upperKC
+noSqz = sqzOn == false and sqzOff == false
+
+val = ta.linreg(source - math.avg(math.avg(ta.highest(high, lengthKC), ta.lowest(low, lengthKC)), ta.sma(close, lengthKC)), lengthKC, 0)
+
+iff_1 = val > nz(val[1]) ? color.lime : color.green
+iff_2 = val < nz(val[1]) ? color.red : color.maroon
+bcolor = val > 0 ? iff_1 : iff_2
+scolor = noSqz ? color.blue : sqzOn ? color.black : color.gray
+// plot(val, color=bcolor, style=plot.style_area, linewidth=4)
+// plot(0, color=scolor, style=plot.style_cross, linewidth=2)
+
+//senales
+alcista = val>val[1] and val>0 and val[1]<=0 or (val>val[1] and val>0 and val[1]<val[2])
+bajista = val<val[1] and val<0 and val[1]>=0
+rebote_alcista = val<0 and val>=val[1] and val[1]<val[2]
+rebote_bajista = val>0 and val<=val[1] and val[1]>val[2]
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+adxlen = input(14, title='ADX Smoothing')
+dilen = input(14, title='DI Length')
+keyLevel = input(23, title='key level for ADX')
+dirmov(len) =>
+    up = ta.change(high)
+    down = -ta.change(low)
+    truerange = ta.rma(ta.tr, len)
+    plus = fixnan(100 * ta.rma(up > down and up > 0 ? up : 0, len) / truerange)
+    minus = fixnan(100 * ta.rma(down > up and down > 0 ? down : 0, len) / truerange)
+    [plus, minus]
+
+adx(dilen, adxlen) =>
+    [plus, minus] = dirmov(dilen)
+    sum = plus + minus
+    adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), adxlen)
+    [adx, plus, minus]
+
+[sig, up, down] = adx(dilen, adxlen)
+
+// plot(sig, color=color.new(color.red, 0), title='ADX')
+// plot(keyLevel, color=color.new(color.white, 0), title='Key Level')
+
+fuerza = sig>sig[1] and sig[1]<sig[2] or sig>sig[1]
+debilidad = sig<sig[1] and sig[1]>sig[2]
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+ema10 = ta.ema(close,10)
+ema55 = ta.ema(close,55)
+ema200 = ta.ema(close,200)
+
+alcista_mm = ema10>ema55
+bajista_mm = ema10<ema55
+
+plot(ema10, color=#2962ff)
+plot(ema55, color=#e79534)
+plot(ema200,color=color.red)
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Alcista = alcista and fuerza and alcista_mm
+Bajista = bajista and fuerza and bajista_mm
+Rebote_alcista = rebote_alcista and debilidad and bajista_mm
+Rebote_bajista = rebote_bajista and debilidad
+senal = Alcista or Bajista or Rebote_alcista or Rebote_bajista
+
+plotshape(Alcista,style=shape.circle,color=color.green,location=location.bottom,size=size.tiny)
+plotshape(Bajista,style=shape.circle,color=color.red,location=location.top,size=size.tiny)
+plotshape(Rebote_alcista,style=shape.diamond,color=color.yellow,location=location.bottom,size=size.tiny)
+plotshape(Rebote_bajista,style=shape.square,color=color.orange,location=location.top,size=size.tiny)
+
+Texto_de_Senales = Alcista ? "señal Alcista" : Bajista ? "señal Bajista" : Rebote_alcista ? "Señal De Rebote Alcista" : Rebote_bajista ? "Señal De Rebote Bajista" : na
+s = "\n"
+
+if senal
+    alert(syminfo.ticker+timeframe.period+s+Texto_de_Senales,alert.freq_once_per_bar_close)
